@@ -1,17 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Button, TextField, Stack, MenuItem, IconButton, Grid, Divider, Box 
+  Container, Typography, Card, CardContent, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, Button, TextField, Stack, MenuItem, IconButton, Grid, Divider, Box,
+  InputAdornment, Fade, Chip, Paper
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import AddIcon from '@mui/icons-material/Add';
+import { 
+  Save, Plus, Trash2, PackagePlus, FileText, User, Building, StickyNote, Box as BoxIcon, AlertCircle 
+} from 'lucide-react';
 import { apiService } from '../../api';
 
+// --- Theme & Style Constants ---
+const theme = {
+  primary: '#1e293b',    // Slate 800
+  secondary: '#64748b',  // Slate 500
+  bg: '#f8fafc',         // Slate 50
+  cardBorder: '#e2e8f0', // Slate 200
+  tableHead: '#f1f5f9',  // Slate 100
+  accent: '#0ea5e9',     // Sky 500
+};
+
 const IntakePage = () => {
+  // --- State Management ---
   const [departments, setDepartments] = useState([]);
   const [masterItems, setMasterItems] = useState([]);
   
-  // 1. ข้อมูล Header ตามโครงสร้าง Swagger
   const [header, setHeader] = useState({
     department_id: '',
     sent_by: '',
@@ -19,48 +31,43 @@ const IntakePage = () => {
     notes: '',
   });
 
-  // 2. ข้อมูลรายการย่อย (Items)
   const [items, setItems] = useState([
     { item_id: '', qty_received: 1, condition_note: '', bag_no: '' }
   ]);
 
-  // โหลดข้อมูล Master Data มาใส่ใน Dropdown
+  // --- Load Data ---
   const loadMaster = async () => {
     try {
       const [dRes, iRes] = await Promise.all([
         apiService.getDepartments(),
         apiService.getItems()
       ]);
-      setDepartments(dRes.data);
-      setMasterItems(iRes.data);
+      setDepartments(dRes.data || []);
+      setMasterItems(iRes.data || []);
     } catch (err) { 
       console.error("โหลดข้อมูล Master ล้มเหลว"); 
     }
   };
 
-  useEffect(() => {
-    loadMaster();
-  }, []);
+  useEffect(() => { loadMaster(); }, []);
 
-  // ฟังก์ชันจัดการตารางรายการ
+  // --- Logic Handlers ---
   const addItemRow = () => {
     setItems([...items, { item_id: '', qty_received: 1, condition_note: '', bag_no: '' }]);
   };
 
-  const removeItemRow = (index: number) => {
+  const removeItemRow = (index) => {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const updateItem = (index: number, field: string, value: any) => {
+  const updateItem = (index, field, value) => {
     const newItems = [...items];
-    (newItems[index] as any)[field] = value;
+    newItems[index][field] = value;
     setItems(newItems);
   };
 
-  // ฟังก์ชันบันทึกข้อมูล
   const handleSave = async () => {
     try {
-      // ดึงชื่อผู้ใช้จาก LocalStorage
       const userStr = localStorage.getItem('user');
       const user = userStr ? JSON.parse(userStr) : null;
 
@@ -69,17 +76,15 @@ const IntakePage = () => {
         return;
       }
 
-      // ตรวจสอบความครบถ้วนของข้อมูลก่อนส่ง
       if (!header.department_id) { alert("กรุณาเลือกแผนกผู้ส่ง"); return; }
       if (items.some(it => !it.item_id)) { alert("กรุณาเลือกรายการสินค้าให้ครบ"); return; }
 
-      // สร้างก้อน JSON Payload
       const payload = {
         department_id: Number(header.department_id),
         sent_by: header.sent_by || "ไม่ได้ระบุ",
-        received_by: user.name, // ต้องมั่นใจว่ามีชื่อตรงนี้
+        received_by: user.name,
         ref_no: header.ref_no || "",
-        received_at: new Date().toISOString(), // ส่งเป็น ISO String
+        received_at: new Date().toISOString(),
         notes: header.notes || "",
         items: items.map(it => ({
           item_id: Number(it.item_id),
@@ -89,177 +94,288 @@ const IntakePage = () => {
         }))
       };
 
-      console.log("Payload to send:", JSON.stringify(payload, null, 2));
-
-      // ส่งข้อมูลไปที่ POST /intakes/
       const response = await apiService.createIntake(payload);
       
       if (response.status === 201 || response.status === 200) {
         alert("บันทึกรับของเข้าสำเร็จ!");
-        // ล้างข้อมูลหน้าจอ
+        // Reset Form
         setHeader({ department_id: '', sent_by: '', ref_no: '', notes: '' });
         setItems([{ item_id: '', qty_received: 1, condition_note: '', bag_no: '' }]);
       }
 
-    } catch (err: any) {
-      // จัดการ Error 500 หรือ Constraint Fail
-      console.error("API Error Detail:", err.response?.data);
-      const errorMsg = err.response?.data?.message || err.response?.data?.detail || "เกิดข้อผิดพลาดที่ระบบฐานข้อมูล (Internal Server Error)";
+    } catch (err) {
+      console.error("API Error:", err);
+      const errorMsg = err.response?.data?.message || err.response?.data?.detail || "เกิดข้อผิดพลาด";
       alert(`บันทึกไม่สำเร็จ: ${errorMsg}`);
     }
   };
 
   return (
-    <Container sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h5" fontWeight="bold" mb={3} color="primary">
-        บันทึกรับผ้าสกปรก/เครื่องมือเข้าหน่วย (Intake)
-      </Typography>
-      
-      {/* ส่วนที่ 1: ข้อมูลทั่วไป (Header) */}
-      <Paper sx={{ p: 3, mb: 3 }} elevation={3}>
-        <Typography variant="h6" mb={2} fontWeight="bold">ข้อมูลการรับ</Typography>
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={4}>
-            <TextField 
-              select 
-              label="ส่งมาจากแผนก/วอร์ด" 
-              fullWidth 
-              required
-              value={header.department_id} 
-              onChange={e => setHeader({...header, department_id: e.target.value})}
+    <Box sx={{ minHeight: '100vh', bgcolor: theme.bg, py: 4 }}>
+      <Fade in={true}>
+        <Container maxWidth="lg">
+          
+          {/* --- Page Header --- */}
+          <Stack direction="row" alignItems="center" spacing={2} mb={4}>
+            <Box 
+              sx={{ 
+                p: 1.5, borderRadius: '12px', 
+                bgcolor: '#fff', 
+                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                border: `1px solid ${theme.cardBorder}`,
+                color: theme.accent
+              }}
             >
-              {departments.map((d: any) => (
-                <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <TextField 
-              label="ผู้ส่ง (ชื่อเจ้าหน้าที่วอร์ด)" 
-              fullWidth 
-              value={header.sent_by} 
-              onChange={e => setHeader({...header, sent_by: e.target.value})} 
-            />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <TextField 
-              label="เลขที่อ้างอิง/เลขที่ใบส่ง" 
-              fullWidth 
-              value={header.ref_no} 
-              onChange={e => setHeader({...header, ref_no: e.target.value})} 
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <TextField 
-              label="หมายเหตุเพิ่มเติม" 
-              fullWidth 
-              multiline 
-              rows={2} 
-              value={header.notes} 
-              onChange={e => setHeader({...header, notes: e.target.value})} 
-            />
-          </Grid>
-        </Grid>
-      </Paper>
-
-      {/* ส่วนที่ 2: รายการสินค้า (Items) */}
-      <Paper sx={{ p: 3 }} elevation={3}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-          <Typography variant="h6" fontWeight="bold">รายการผ้า/เครื่องมือที่ได้รับ</Typography>
-          <Button 
-            startIcon={<AddIcon />} 
-            variant="contained" 
-            color="success" 
-            onClick={addItemRow}
+              <PackagePlus size={32} />
+            </Box>
+            <Box>
+              <Typography variant="h5" fontWeight="800" color={theme.primary}>
+                บันทึกรับเข้า (Intake)
+              </Typography>
+              <Typography variant="body2" color={theme.secondary}>
+                ลงทะเบียนรับผ้าสกปรกหรือเครื่องมือเข้าสู่ระบบ
+              </Typography>
+            </Box>
+          </Stack>
+          
+          {/* --- Section 1: Header Information --- */}
+          <Card 
+            elevation={0} 
+            sx={{ 
+              borderRadius: '16px', 
+              border: `1px solid ${theme.cardBorder}`, 
+              mb: 3, overflow: 'visible' 
+            }}
           >
-            เพิ่มรายการ
-          </Button>
-        </Stack>
+            <Box sx={{ px: 3, py: 2, borderBottom: `1px solid ${theme.cardBorder}`, bgcolor: '#fff' }}>
+               <Typography variant="subtitle1" fontWeight="bold" display="flex" alignItems="center" gap={1}>
+                 <FileText size={18} color={theme.secondary} /> ข้อมูลใบส่งของ
+               </Typography>
+            </Box>
+            <CardContent sx={{ p: 3 }}>
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={4}>
+                  <TextField 
+                    select 
+                    label="ส่งมาจากแผนก/วอร์ด" 
+                    fullWidth 
+                    required
+                    size="medium"
+                    value={header.department_id} 
+                    onChange={e => setHeader({...header, department_id: e.target.value})}
+                    InputProps={{
+                        startAdornment: <InputAdornment position="start"><Building size={18} color={theme.secondary}/></InputAdornment>,
+                        sx: { borderRadius: '10px' }
+                    }}
+                  >
+                    {departments.map((d) => (
+                      <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField 
+                    label="ชื่อผู้นำส่ง" 
+                    placeholder="ระบุชื่อเจ้าหน้าที่"
+                    fullWidth 
+                    value={header.sent_by} 
+                    onChange={e => setHeader({...header, sent_by: e.target.value})} 
+                    InputProps={{
+                        startAdornment: <InputAdornment position="start"><User size={18} color={theme.secondary}/></InputAdornment>,
+                        sx: { borderRadius: '10px' }
+                    }}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField 
+                    label="เลขที่ใบส่งของ (Ref No.)" 
+                    placeholder="เช่น 67-001"
+                    fullWidth 
+                    value={header.ref_no} 
+                    onChange={e => setHeader({...header, ref_no: e.target.value})} 
+                    InputProps={{
+                        startAdornment: <InputAdornment position="start"><FileText size={18} color={theme.secondary}/></InputAdornment>,
+                        sx: { borderRadius: '10px' }
+                    }}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField 
+                    label="หมายเหตุเพิ่มเติม" 
+                    fullWidth 
+                    multiline 
+                    rows={2} 
+                    placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
+                    value={header.notes} 
+                    onChange={e => setHeader({...header, notes: e.target.value})} 
+                    InputProps={{
+                        startAdornment: <InputAdornment position="start" sx={{ mt: 1.5 }}><StickyNote size={18} color={theme.secondary}/></InputAdornment>,
+                        sx: { borderRadius: '10px' }
+                    }}
+                  />
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
 
-        <TableContainer>
-          <Table>
-            <TableHead sx={{ bgcolor: '#eceff1' }}>
-              <TableRow>
-                <TableCell width="35%">รายการ</TableCell>
-                <TableCell width="15%" align="center">จำนวน</TableCell>
-                <TableCell width="20%">เลขถุง/ถัง</TableCell>
-                <TableCell width="25%">สภาพของ/ตำหนิ</TableCell>
-                <TableCell width="5%"></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {items.map((row, index) => (
-                <TableRow key={index} hover>
-                  <TableCell>
-                    <TextField 
-                      select 
-                      fullWidth 
-                      size="small" 
-                      value={row.item_id} 
-                      onChange={e => updateItem(index, 'item_id', e.target.value)}
-                    >
-                      {masterItems.map((it: any) => (
-                        <MenuItem key={it.id} value={it.id}>{it.name} ({it.code})</MenuItem>
-                      ))}
-                    </TextField>
-                  </TableCell>
-                  <TableCell>
-                    <TextField 
-                      type="number" 
-                      fullWidth 
-                      size="small" 
-                      value={row.qty_received} 
-                      onChange={e => updateItem(index, 'qty_received', e.target.value)} 
-                      inputProps={{ min: 1 }}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <TextField 
-                      fullWidth 
-                      size="small" 
-                      placeholder="เช่น 312" 
-                      value={row.bag_no} 
-                      onChange={e => updateItem(index, 'bag_no', e.target.value)} 
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <TextField 
-                      fullWidth 
-                      size="small" 
-                      placeholder="เช่น เปียก, ชำรุด" 
-                      value={row.condition_note} 
-                      onChange={e => updateItem(index, 'condition_note', e.target.value)} 
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <IconButton 
-                      color="error" 
-                      onClick={() => removeItemRow(index)} 
-                      disabled={items.length === 1}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-
-        <Divider sx={{ my: 4 }} />
-        
-        <Box display="flex" justifyContent="flex-end">
-          <Button 
-            variant="contained" 
-            size="large" 
-            onClick={handleSave} 
-            sx={{ minWidth: 250, py: 1.5, fontWeight: 'bold', fontSize: '1.1rem' }}
+          {/* --- Section 2: Items Table --- */}
+          <Card 
+            elevation={0} 
+            sx={{ 
+              borderRadius: '16px', 
+              border: `1px solid ${theme.cardBorder}`,
+              minHeight: 400,
+              display: 'flex', flexDirection: 'column'
+            }}
           >
-            ยืนยันการรับของเข้า
-          </Button>
-        </Box>
-      </Paper>
-    </Container>
+            <Box sx={{ 
+                px: 3, py: 2, 
+                borderBottom: `1px solid ${theme.cardBorder}`, 
+                bgcolor: '#fff',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <Typography variant="subtitle1" fontWeight="bold" display="flex" alignItems="center" gap={1}>
+                 <BoxIcon size={18} color={theme.secondary} /> รายการสินค้า
+                 <Chip label={`${items.length} รายการ`} size="small" sx={{ bgcolor: theme.bg, fontWeight: 600 }} />
+              </Typography>
+              <Button 
+                startIcon={<Plus size={18} />} 
+                variant="outlined" 
+                size="small"
+                onClick={addItemRow}
+                sx={{ 
+                    borderRadius: '8px', 
+                    textTransform: 'none', 
+                    fontWeight: 600,
+                    borderColor: theme.cardBorder,
+                    color: theme.primary,
+                    '&:hover': { bgcolor: theme.bg, borderColor: theme.secondary }
+                }}
+              >
+                เพิ่มแถว
+              </Button>
+            </Box>
+
+            <TableContainer sx={{ flexGrow: 1 }}>
+              <Table stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell width="35%" sx={{ bgcolor: theme.tableHead, fontWeight: 600, color: theme.secondary }}>รายการ (Item)</TableCell>
+                    <TableCell width="15%" align="center" sx={{ bgcolor: theme.tableHead, fontWeight: 600, color: theme.secondary }}>จำนวน</TableCell>
+                    <TableCell width="20%" sx={{ bgcolor: theme.tableHead, fontWeight: 600, color: theme.secondary }}>เลขถุง/ถัง</TableCell>
+                    <TableCell width="25%" sx={{ bgcolor: theme.tableHead, fontWeight: 600, color: theme.secondary }}>สภาพ/ตำหนิ</TableCell>
+                    <TableCell width="5%" sx={{ bgcolor: theme.tableHead }}></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {items.map((row, index) => (
+                    <TableRow key={index} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                      <TableCell sx={{ p: 2 }}>
+                        <TextField 
+                          select 
+                          fullWidth 
+                          size="small" 
+                          placeholder="เลือกรายการ"
+                          value={row.item_id} 
+                          onChange={e => updateItem(index, 'item_id', e.target.value)}
+                          InputProps={{ sx: { borderRadius: '8px', bgcolor: '#fff' } }}
+                        >
+                          {masterItems.map((it) => (
+                            <MenuItem key={it.id} value={it.id}>{it.name} <Typography variant="caption" color="text.secondary" ml={1}>({it.code})</Typography></MenuItem>
+                          ))}
+                        </TextField>
+                      </TableCell>
+                      <TableCell align="center" sx={{ p: 2 }}>
+                        <TextField 
+                          type="number" 
+                          fullWidth 
+                          size="small" 
+                          value={row.qty_received} 
+                          onChange={e => updateItem(index, 'qty_received', e.target.value)} 
+                          inputProps={{ min: 1, style: { textAlign: 'center' } }}
+                          InputProps={{ sx: { borderRadius: '8px', bgcolor: '#fff' } }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ p: 2 }}>
+                        <TextField 
+                          fullWidth 
+                          size="small" 
+                          placeholder="ระบุเลข" 
+                          value={row.bag_no} 
+                          onChange={e => updateItem(index, 'bag_no', e.target.value)} 
+                          InputProps={{ sx: { borderRadius: '8px', bgcolor: '#fff' } }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ p: 2 }}>
+                        <TextField 
+                          fullWidth 
+                          size="small" 
+                          placeholder="เช่น เปียก, ขาด" 
+                          value={row.condition_note} 
+                          onChange={e => updateItem(index, 'condition_note', e.target.value)} 
+                          InputProps={{ sx: { borderRadius: '8px', bgcolor: '#fff' } }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ p: 2 }}>
+                        <IconButton 
+                          size="small"
+                          color="error" 
+                          onClick={() => removeItemRow(index)} 
+                          disabled={items.length === 1}
+                          sx={{ 
+                            opacity: items.length === 1 ? 0.3 : 0.7,
+                            '&:hover': { bgcolor: '#fee2e2', opacity: 1 }
+                          }}
+                        >
+                          <Trash2 size={18} />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Card>
+
+          {/* --- Footer Action --- */}
+          <Paper 
+            elevation={0} 
+            sx={{ 
+                position: 'sticky', bottom: 20, zIndex: 10,
+                mt: 3, p: 2, 
+                borderRadius: '16px', 
+                bgcolor: 'rgba(255,255,255,0.9)', 
+                backdropFilter: 'blur(10px)',
+                border: `1px solid ${theme.cardBorder}`,
+                boxShadow: '0 -4px 20px rgba(0,0,0,0.05)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}
+          >
+             <Box display="flex" alignItems="center" gap={1} color={theme.secondary}>
+                <AlertCircle size={18} />
+                <Typography variant="caption">กรุณาตรวจสอบความถูกต้องของจำนวนก่อนบันทึก</Typography>
+             </Box>
+             <Button 
+                variant="contained" 
+                size="large" 
+                onClick={handleSave} 
+                startIcon={<Save size={20} />}
+                sx={{ 
+                    borderRadius: '10px', 
+                    bgcolor: theme.primary, 
+                    px: 4, py: 1.2,
+                    fontWeight: 'bold',
+                    boxShadow: '0 4px 10px rgba(30, 41, 59, 0.2)',
+                    '&:hover': { bgcolor: '#0f172a' }
+                }}
+              >
+                ยืนยันการรับของ
+             </Button>
+          </Paper>
+
+        </Container>
+      </Fade>
+    </Box>
   );
 };
 
